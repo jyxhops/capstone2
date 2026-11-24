@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Study & Task Management System</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- AUTHENTICATION SCREEN -->
+  <section id="auth-section" class="auth-wrapper">
+    <div class="auth-card">
+      <div class="brand-header">
+        <img src="gnci.jpg" alt="GNCI Logo" class="brand-logo" />
+        <h1>StudyFlow</h1>
+        <p>Web-Based Student Study & Task Management System</p>
+      </div>
+
+      <div class="auth-tabs">
+        <button type="button" id="tab-login" class="active" onclick="switchAuthTab('login')">Login</button>
+        <button type="button" id="tab-register" onclick="switchAuthTab('register')">Register</button>
+      </div>
+
+      <div id="auth-message" class="auth-message hidden"></div>
+
+      <!-- Login Form -->
+      <form id="login-form" class="auth-form">
+        <div class="form-group">
+          <label for="login-email">Student Email</label>
+          <input type="email" id="login-email" placeholder="student@gnc.edu.ph" required />
+        </div>
+        <div class="form-group">
+          <label for="login-password">Password</label>
+          <input type="password" id="login-password" placeholder="Enter password" required />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Sign In</button>
+      </form>
+
+      <!-- Register Form -->
+      <form id="register-form" class="auth-form hidden">
+        <div class="form-group">
+          <label for="reg-name">Full Name</label>
+          <input type="text" id="reg-name" placeholder="Juan Dela Cruz" required />
+        </div>
+        <div class="form-group">
+          <label for="reg-email">Student Email</label>
+          <input type="email" id="reg-email" placeholder="student@gnc.edu.ph" required />
+        </div>
+        <div class="form-group">
+          <label for="reg-password">Password</label>
+          <input type="password" id="reg-password" placeholder="Create password (min. 6 chars)" minlength="6" required />
+        </div>
+        <button type="submit" class="btn btn-primary btn-block">Create Account</button>
+      </form>
+    </div>
+  </section>
+
+  <!-- MAIN APPLICATION DASHBOARD -->
+  <div id="app-section" class="app-layout hidden">
+    <!-- Sidebar Navigation -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-row">
+          <img src="gnci.jpg" alt="GNCI Logo" class="sidebar-logo" />
+          <div>
+            <h2>StudyFlow</h2>
+            <span class="badge">GNCI Portal</span>
+          </div>
+        </div>
+      </div>
+      <nav class="sidebar-nav">
+        <button class="nav-btn active" data-view="dashboard" onclick="switchView('dashboard')">📊 Dashboard</button>
+        <button class="nav-btn" data-view="tasks" onclick="switchView('tasks')">📝 Task Management</button>
+        <button class="nav-btn" data-view="schedule" onclick="switchView('schedule')">📅 Study Schedule</button>
+      </nav>
+      <div class="sidebar-footer">
+        <div class="user-info">
+          <strong id="user-display-name">Student Name</strong>
+          <small id="user-display-email">student@gnc.edu.ph</small>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="logout()">Logout</button>
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="main-content">
+      <!-- Top Bar -->
+      <header class="topbar">
+        <h1 id="page-title">Dashboard Overview</h1>
+        <button class="btn btn-secondary btn-sm" onclick="exportJSON()">⬇ Export Data (JSON)</button>
+      </header>
+
+      <!-- VIEW 1: CENTRALIZED DASHBOARD -->
+      <section id="view-dashboard" class="view-section">
+        <div id="deadline-alert" class="alert-banner hidden"></div>
+
+        <div class="stats-grid">
+          <div class="stat-card">
+            <span>Total Tasks</span>
+            <h2 id="stat-total">0</h2>
+          </div>
+          <div class="stat-card warning">
+            <span>Pending</span>
+            <h2 id="stat-pending">0</h2>
+          </div>
+          <div class="stat-card info">
+            <span>Ongoing</span>
+            <h2 id="stat-ongoing">0</h2>
+          </div>
+          <div class="stat-card success">
+            <span>Completed</span>
+            <h2 id="stat-completed">0</h2>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Academic Task Completion Progress</h3>
+            <span id="progress-percent">0%</span>
+          </div>
+          <div class="progress-track">
+            <div id="progress-fill" class="progress-fill"></div>
+          </div>
+        </div>
+
+        <div class="two-col-grid">
+          <div class="card">
+            <h3>⏰ Upcoming Deadlines</h3>
+            <ul id="upcoming-deadlines-list" class="clean-list"></ul>
+          </div>
+          <div class="card">
+            <h3>📚 Study Routines</h3>
+            <ul id="dashboard-schedule-list" class="clean-list"></ul>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 2: TASK MANAGEMENT -->
+      <section id="view-tasks" class="view-section hidden">
+        <div class="card">
+          <h3 id="task-form-title">Add New Academic Task</h3>
+          <form id="task-form" class="grid-form">
+            <input type="hidden" id="task-id" />
+            <div class="form-group">
+              <label for="task-title">Task / Assignment Title</label>
+              <input type="text" id="task-title" placeholder="e.g., Capstone Chapter 2 Draft" required />
+            </div>
+            <div class="form-group">
+              <label for="task-subject">Subject / Course</label>
+              <input type="text" id="task-subject" placeholder="e.g., Capstone Project 1" required />
+            </div>
+            <div class="form-group">
+              <label for="task-deadline">Due Date</label>
+              <input type="date" id="task-deadline" required />
+            </div>
+            <div class="form-group">
+              <label for="task-priority">Priority Level</label>
+              <select id="task-priority">
+                <option value="High">High</option>
+                <option value="Medium" selected>Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="task-status">Status</label>
+              <select id="task-status">
+                <option value="Pending">Pending</option>
+                <option value="Ongoing">Ongoing</option>
+                <option value="Completed">Completed</option>
+              </select>
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary" id="task-submit-btn">Save Task</button>
+              <button type="button" class="btn btn-outline hidden" id="task-cancel-btn" onclick="resetTaskForm()">Cancel</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <h3>Task List</h3>
+            <div class="filters">
+              <select id="filter-status" onchange="renderTasks()">
+                <option value="All">All Statuses</option>
+                <option value="Pending">Pending</option>
+                <option value="Ongoing">Ongoing</option>
+                <option value="Completed">Completed</option>
+              </select>
+              <select id="filter-priority" onchange="renderTasks()">
+                <option value="All">All Priorities</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Task & Subject</th>
+                  <th>Due Date</th>
+                  <th>Priority</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="task-table-body"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- VIEW 3: STUDY SCHEDULE PLANNER -->
+      <section id="view-schedule" class="view-section hidden">
+        <div class="card">
+          <h3>Plan Study Session</h3>
+          <form id="schedule-form" class="grid-form">
+            <div class="form-group">
+              <label for="sched-day">Day of Week</label>
+              <select id="sched-day">
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+                <option value="Saturday">Saturday</option>
+                <option value="Sunday">Sunday</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="sched-time">Time Slot</label>
+              <input type="text" id="sched-time" placeholder="e.g., 6:00 PM - 8:00 PM" required />
+            </div>
+            <div class="form-group">
+              <label for="sched-subject">Subject / Topic</label>
+              <input type="text" id="sched-subject" placeholder="e.g., System Architecture Review" required />
+            </div>
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Add to Schedule</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="card">
+          <h3>Weekly Study Timetable</h3>
+          <div id="schedule-grid" class="schedule-grid"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="script.js"></script>
+</body>
+</html>
