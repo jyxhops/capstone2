@@ -99,16 +99,20 @@ document.getElementById('login-form').addEventListener('submit', async function 
     return;
   }
 
-  await db
-    .from('profiles')
-    .update({ last_login_at: new Date().toISOString() })
-    .eq('id', data.user.id);
-
   await enterApp(data.user);
 });
 
 async function enterApp(user) {
   currentUser = user;
+
+  const fullName = user.user_metadata?.full_name || user.email.split('@')[0];
+
+  await db.from('profiles').upsert({
+    id: user.id,
+    full_name: fullName,
+    email: user.email,
+    last_login_at: new Date().toISOString()
+  });
 
   const { data: profile } = await db
     .from('profiles')
@@ -116,8 +120,7 @@ async function enterApp(user) {
     .eq('id', user.id)
     .single();
 
-  const displayName =
-    profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
+  const displayName = profile?.full_name || fullName;
   const displayEmail = profile?.email || user.email;
 
   document.getElementById('auth-section').classList.add('hidden');
