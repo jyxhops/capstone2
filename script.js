@@ -1,74 +1,11 @@
-const STORAGE_KEY = 'studyflow_data_v1';
-const SESSION_KEY = 'studyflow_session_v1';
+const SUPABASE_URL = 'https://firqcvxlwjjubycsafgt.supabase.co';
+const SUPABASE_KEY = 'sb_publishable_5Hvm8P_CXGH-jLVIADq4QQ_ZIvzMHYl';
 
-const DEFAULT_DATA = {
-  users: [
-    {
-      name: 'Juan Dela Cruz',
-      email: 'student@gnc.edu.ph',
-      password: '123456'
-    }
-  ],
-  tasks: [
-    {
-      id: 1700000001,
-      title: 'Finalize Capstone Chapter 1 & IPO Framework',
-      subject: 'Capstone Project 1',
-      deadline: '2026-11-24',
-      priority: 'High',
-      status: 'Ongoing'
-    },
-    {
-      id: 1700000002,
-      title: 'Database Normalization Quiz Review',
-      subject: 'Information Management',
-      deadline: '2026-11-26',
-      priority: 'Medium',
-      status: 'Pending'
-    },
-    {
-      id: 1700000003,
-      title: 'Submit System Prototype Wireframes',
-      subject: 'Human-Computer Interaction',
-      deadline: '2026-11-20',
-      priority: 'High',
-      status: 'Completed'
-    }
-  ],
-  schedules: [
-    {
-      id: 2700000001,
-      day: 'Monday',
-      time: '6:00 PM - 8:00 PM',
-      subject: 'Capstone System Development'
-    },
-    {
-      id: 2700000002,
-      day: 'Wednesday',
-      time: '4:00 PM - 6:00 PM',
-      subject: 'Information Management'
-    },
-    {
-      id: 2700000003,
-      day: 'Saturday',
-      time: '9:00 AM - 11:30 AM',
-      subject: 'Research & Documentation'
-    }
-  ]
-};
+const db = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
-function getAppData() {
-  const raw = localStorage.getItem(STORAGE_KEY);
-  if (!raw) {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(DEFAULT_DATA));
-    return structuredClone(DEFAULT_DATA);
-  }
-  return JSON.parse(raw);
-}
-
-function saveAppData(data) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-}
+let currentUser = null;
+let cachedTasks = [];
+let cachedSchedules = [];
 
 function showAuthMessage(text, type = 'error') {
   const box = document.getElementById('auth-message');
@@ -103,72 +40,99 @@ function switchAuthTab(tab) {
   }
 }
 
-document.getElementById('register-form').addEventListener('submit', function (e) {
+document.getElementById('register-form').addEventListener('submit', async function (e) {
   e.preventDefault();
   clearAuthMessage();
 
-  const name = document.getElementById('reg-name').value.trim();
+  const fullName = document.getElementById('reg-name').value.trim();
   const email = document.getElementById('reg-email').value.trim().toLowerCase();
   const password = document.getElementById('reg-password').value;
-
-  if (!name || !email || !password) {
-    showAuthMessage('Please fill in all registration fields.');
-    return;
-  }
 
   if (!email.endsWith('@gnc.edu.ph')) {
     showAuthMessage('Please use a valid @gnc.edu.ph student email address.');
     return;
   }
 
-  const data = getAppData();
-  const exists = data.users.some((u) => u.email.toLowerCase() === email);
-  if (exists) {
-    showAuthMessage('An account with this student email already exists.');
+  const { data, error } = await db.auth.signUp({
+    email,
+    password,
+    options: {
+      data: { full_name: fullName }
+    }
+  });
+
+  if (error) {
+    showAuthMessage(error.message);
     return;
   }
 
-  const newUser = { name, email, password };
-  data.users.push(newUser);
-  saveAppData(data);
+  if (data.user) {
+    await db.from('profiles').upsert({
+      id: data.user.id,
+      full_name: fullName,
+      email
+    });
+  }
 
   this.reset();
   switchAuthTab('login');
   document.getElementById('login-email').value = email;
-  showAuthMessage('Account created successfully! Please sign in.', 'success');
+
+  if (data.session) {
+    await enterApp(data.user);
+  } else {
+    showAuthMessage('Account registered! Check your email for confirmation or sign in.', 'success');
+  }
 });
 
-document.getElementById('login-form').addEventListener('submit', function (e) {
+document.getElementById('login-form').addEventListener('submit', async function (e) {
   e.preventDefault();
   clearAuthMessage();
 
   const email = document.getElementById('login-email').value.trim().toLowerCase();
   const password = document.getElementById('login-password').value;
 
-  const data = getAppData();
-  const user = data.users.find(
-    (u) => u.email.toLowerCase() === email && u.password === password
-  );
+  const { data, error } = await db.auth.signInWithPassword({ email, password });
 
-  if (!user) {
-    showAuthMessage('Invalid student email or password.');
+  if (error) {
+    showAuthMessage(error.message);
     return;
   }
 
-  localStorage.setItem(SESSION_KEY, JSON.stringify({ name: user.name, email: user.email }));
-  enterApp(user);
+  await db
+    .from('profiles')
+    .update({ last_login_at: new Date().toISOString() })
+    .eq('id', data.user.id);
+
+  await enterApp(data.user);
 });
 
-function enterApp(user) {
+async function enterApp(user) {
+  currentUser = user;
+
+  const { data: profile } = await db
+    .from('profiles')
+    .select('full_name, email')
+    .eq('id', user.id)
+    .single();
+
+  const displayName =
+    profile?.full_name || user.user_metadata?.full_name || user.email.split('@')[0];
+  const displayEmail = profile?.email || user.email;
+
   document.getElementById('auth-section').classList.add('hidden');
   document.getElementById('app-section').classList.remove('hidden');
-  document.getElementById('user-display-name').textContent = user.name;
-  document.getElementById('user-display-email').textContent = user.email;
-  renderAll();
+  document.getElementById('user-display-name').textContent = displayName;
+  document.getElementById('user-display-email').textContent = displayEmail;
+
+  await refreshAllData();
 }
 
-function logout() {
-  localStorage.removeItem(SESSION_KEY);
+async function logout() {
+  await db.auth.signOut();
+  currentUser = null;
+  cachedTasks = [];
+  cachedSchedules = [];
   document.getElementById('app-section').classList.add('hidden');
   document.getElementById('auth-section').classList.remove('hidden');
   document.getElementById('login-form').reset();
@@ -192,9 +156,27 @@ function switchView(viewName) {
   document.getElementById('page-title').textContent = titles[viewName] || 'Dashboard';
 }
 
-/* DASHBOARD & RENDERING */
+/* DATA FETCHING & RENDERING */
+async function refreshAllData() {
+  if (!currentUser) return;
+
+  const [tasksRes, schedRes] = await Promise.all([
+    db.from('tasks').select('*').order('deadline', { ascending: true }),
+    db.from('schedules').select('*').order('id', { ascending: true })
+  ]);
+
+  cachedTasks = tasksRes.data || [];
+  cachedSchedules = schedRes.data || [];
+
+  renderDashboard();
+  renderTasks();
+  renderSchedule();
+}
+
 function renderDashboard() {
-  const { tasks, schedules } = getAppData();
+  const tasks = cachedTasks;
+  const schedules = cachedSchedules;
+
   const total = tasks.length;
   const pending = tasks.filter((t) => t.status === 'Pending').length;
   const ongoing = tasks.filter((t) => t.status === 'Ongoing').length;
@@ -209,7 +191,6 @@ function renderDashboard() {
   document.getElementById('progress-percent').textContent = `${percent}%`;
   document.getElementById('progress-fill').style.width = `${percent}%`;
 
-  // Deadline alerts & upcoming list
   const today = new Date().toISOString().split('T')[0];
   const activeTasks = tasks
     .filter((t) => t.status !== 'Completed')
@@ -246,7 +227,7 @@ function renderDashboard() {
           (s) => `
         <li>
           <span><strong>${s.day}</strong> — ${s.subject}</span>
-          <span>${s.time}</span>
+          <span>${s.time_slot}</span>
         </li>`
         )
         .join('')
@@ -254,13 +235,13 @@ function renderDashboard() {
 }
 
 /* TASK CRUD */
-document.getElementById('task-form').addEventListener('submit', function (e) {
+document.getElementById('task-form').addEventListener('submit', async function (e) {
   e.preventDefault();
-  const data = getAppData();
-  const idVal = document.getElementById('task-id').value;
+  if (!currentUser) return;
 
-  const taskObj = {
-    id: idVal ? Number(idVal) : Date.now(),
+  const idVal = document.getElementById('task-id').value;
+  const payload = {
+    user_id: currentUser.id,
     title: document.getElementById('task-title').value.trim(),
     subject: document.getElementById('task-subject').value.trim(),
     deadline: document.getElementById('task-deadline').value,
@@ -268,24 +249,27 @@ document.getElementById('task-form').addEventListener('submit', function (e) {
     status: document.getElementById('task-status').value
   };
 
+  let error;
   if (idVal) {
-    const idx = data.tasks.findIndex((t) => t.id === Number(idVal));
-    if (idx !== -1) data.tasks[idx] = taskObj;
+    ({ error } = await db.from('tasks').update(payload).eq('id', Number(idVal)));
   } else {
-    data.tasks.push(taskObj);
+    ({ error } = await db.from('tasks').insert(payload));
   }
 
-  saveAppData(data);
+  if (error) {
+    alert(`Error saving task: ${error.message}`);
+    return;
+  }
+
   resetTaskForm();
-  renderAll();
+  await refreshAllData();
 });
 
 function renderTasks() {
-  const { tasks } = getAppData();
   const statusFilter = document.getElementById('filter-status').value;
   const priorityFilter = document.getElementById('filter-priority').value;
 
-  const filtered = tasks.filter((t) => {
+  const filtered = cachedTasks.filter((t) => {
     const matchStatus = statusFilter === 'All' || t.status === statusFilter;
     const matchPriority = priorityFilter === 'All' || t.priority === priorityFilter;
     return matchStatus && matchPriority;
@@ -315,8 +299,7 @@ function renderTasks() {
 }
 
 function editTask(id) {
-  const { tasks } = getAppData();
-  const task = tasks.find((t) => t.id === id);
+  const task = cachedTasks.find((t) => t.id === id);
   if (!task) return;
 
   document.getElementById('task-id').value = task.id;
@@ -339,41 +322,45 @@ function resetTaskForm() {
   document.getElementById('task-cancel-btn').classList.add('hidden');
 }
 
-function deleteTask(id) {
-  const data = getAppData();
-  data.tasks = data.tasks.filter((t) => t.id !== id);
-  saveAppData(data);
-  renderAll();
+async function deleteTask(id) {
+  const { error } = await db.from('tasks').delete().eq('id', id);
+  if (error) {
+    alert(`Error deleting task: ${error.message}`);
+    return;
+  }
+  await refreshAllData();
 }
 
 /* SCHEDULE PLANNER */
-document.getElementById('schedule-form').addEventListener('submit', function (e) {
+document.getElementById('schedule-form').addEventListener('submit', async function (e) {
   e.preventDefault();
-  const data = getAppData();
+  if (!currentUser) return;
 
-  data.schedules.push({
-    id: Date.now(),
+  const { error } = await db.from('schedules').insert({
+    user_id: currentUser.id,
     day: document.getElementById('sched-day').value,
-    time: document.getElementById('sched-time').value.trim(),
+    time_slot: document.getElementById('sched-time').value.trim(),
     subject: document.getElementById('sched-subject').value.trim()
   });
 
-  saveAppData(data);
+  if (error) {
+    alert(`Error adding schedule: ${error.message}`);
+    return;
+  }
+
   this.reset();
-  renderAll();
+  await refreshAllData();
 });
 
 function renderSchedule() {
-  const { schedules } = getAppData();
   const grid = document.getElementById('schedule-grid');
-
-  grid.innerHTML = schedules.length
-    ? schedules
+  grid.innerHTML = cachedSchedules.length
+    ? cachedSchedules
         .map(
           (s) => `
         <div class="schedule-item">
           <strong>${s.day}</strong>
-          <p style="font-size: 0.85rem; color: var(--muted); margin: 4px 0;">${s.time}</p>
+          <p style="font-size: 0.85rem; color: var(--muted); margin: 4px 0;">${s.time_slot}</p>
           <p style="font-weight: 600; margin-bottom: 8px;">${s.subject}</p>
           <button class="btn btn-danger btn-sm" onclick="deleteSchedule(${s.id})">Remove</button>
         </div>`
@@ -382,35 +369,34 @@ function renderSchedule() {
     : '<p>No study sessions added yet.</p>';
 }
 
-function deleteSchedule(id) {
-  const data = getAppData();
-  data.schedules = data.schedules.filter((s) => s.id !== id);
-  saveAppData(data);
-  renderAll();
+async function deleteSchedule(id) {
+  const { error } = await db.from('schedules').delete().eq('id', id);
+  if (error) {
+    alert(`Error removing schedule: ${error.message}`);
+    return;
+  }
+  await refreshAllData();
 }
 
-/* EXPORT & INIT */
+/* EXPORT & SESSION RESTORE */
 function exportJSON() {
-  const data = getAppData();
-  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const exportPayload = {
+    user: currentUser?.email || null,
+    tasks: cachedTasks,
+    schedules: cachedSchedules
+  };
+  const blob = new Blob([JSON.stringify(exportPayload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'studyflow-backup.json';
+  a.download = 'studyflow-supabase-backup.json';
   a.click();
   URL.revokeObjectURL(url);
 }
 
-function renderAll() {
-  renderDashboard();
-  renderTasks();
-  renderSchedule();
-}
-
-window.addEventListener('DOMContentLoaded', () => {
-  getAppData();
-  const sessionRaw = localStorage.getItem(SESSION_KEY);
-  if (sessionRaw) {
-    enterApp(JSON.parse(sessionRaw));
+window.addEventListener('DOMContentLoaded', async () => {
+  const { data } = await db.auth.getSession();
+  if (data.session?.user) {
+    await enterApp(data.session.user);
   }
 });
